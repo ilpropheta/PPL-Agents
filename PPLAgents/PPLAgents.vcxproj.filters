@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{421651a9-7e91-460b-af7d-630aa5f9bc6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Examples">
+      <UniqueIdentifier>{465dd890-cd33-43cb-b665-600661197f10}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Agent.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="AgentComposer.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="AsyncConsumer.h">
+      <Filter>Examples</Filter>
+    </ClInclude>
+    <ClInclude Include="StrategyBasedAsyncConsumer.h">
+      <Filter>Examples</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
