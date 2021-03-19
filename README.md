@@ -260,24 +260,24 @@ private:
 
 int main()
 {
-    using AutoAllThrowingConsumer = AsyncConsumer<MyThrowingConsumer, AutoStart, AutoStop, AutoWait, RetainLastValues>;
+    	using AutoAllThrowingConsumer = AsyncConsumer<MyThrowingConsumer, AutoStart, AutoStop, AutoWait, RetainLastValues>;
 		
-    Concurrency::unbounded_buffer<int> vals;
-		Concurrency::unbounded_buffer<int> anotherBuffer;
-		AutoAllThrowingConsumer consumer{ vals };
+    	Concurrency::unbounded_buffer<int> vals;
+	Concurrency::unbounded_buffer<int> anotherBuffer;
+	AutoAllThrowingConsumer consumer{ vals };
 
-		for (auto i=0; i<100; ++i)
-		{
-			Concurrency::send(vals, i);
-			Concurrency::send(anotherBuffer, i);
-		}
-    Concurrency::wait(300); // simulate some delay
+	for (auto i=0; i<100; ++i)
+	{
+		Concurrency::send(vals, i);
+		Concurrency::send(anotherBuffer, i);
+	}
+	Concurrency::wait(300); // simulate some delay
 
-		int val = 0;
-		while (try_receive(vals, val))
-		{
-			std::cout << "this is still in the buffer: " << val << "\n";
-		}
+	int val = 0;
+	while (try_receive(vals, val))
+	{
+		std::cout << "this is still in the buffer: " << val << "\n";
+	}
 }
 ```
 
