@@ -2,7 +2,7 @@
 
 This small repository contains a few abstractions I have built on top of Microsoft PPL's `<agents.h>` module.
 
-Since the library itself is deprecated and Microsoft does not provide support for it anymore, I am adopting other libraries. In my opinion, it's a pity that Microsoft abandoned the development of this library and never invested to make it cross-platform. It covers some concurrent programming patterns and constructs very well (and simply).
+Since the library itself is deprecated and Microsoft does not provide support for it anymore, I am adopting other libraries. In my opinion, it's a pity that Microsoft abandoned this library and never provided a replacement for cross-platform needs. It covers some concurrent programming patterns and constructs quite nicely.
 
 On the other hand, its .NET core cousin [Dataflow](https://docs.microsoft.com/en-us/dotnet/standard/parallel-programming/dataflow-task-parallel-library) (previously known as *TPL - Task Parallel Library*) is widely supported and used. Consider also that Rene Stein has developed [this library](https://github.com/renestein/Rstein.AsyncCpp) inspired by TPL.
 
@@ -12,11 +12,9 @@ A few things, really. No rocket science.
 
 ### Bringing cancellation to agents
 
-PPL's agents are simple to use. You just inherit from `Concurrency::agent` and override `agent::run` to customize the agent behavior. `run` is executed when the agent is scheduled for running (after you call `start` on it). However, agents do not provide *cancellation* as you might expect. They can be cancelled only *before* they start. 
+PPL's agents are simple to use. Just inherit from `Concurrency::agent` and override `agent::run`. That's pretty much it. `run` is scheduled for execution after the agent is started. However, agents do not provide a *cancellation* mechanism during running. They can be cancelled only *before* they start. Stopping an agent while it runs has to be managed ad-hoc.
 
-In other words, you can create an agent and cancel it before it moves to the "running" state. However, many times you need to stop the agent *while it's running*.
-
-Thus, this repository contains a wrapper on top of `Concurrency::agent` that provides a cancellation concept as you might expect and hides the other cancellation mechanism (if you need it, just add it to the code, I won't be offended).
+This repository contains a wrapper on top of `Concurrency::agent` that provides a cancellation concept and hides the other cancellation mechanism (if you need it, just add it to the code, I won't be offended).
 
 You just inherit from `Agents::Agent` and override `Agent::Run(CancellationToken&)`:
 
@@ -57,7 +55,9 @@ a.StopAndWait();
 
 Sometimes you just want to start and stop your agents automatically (in a RAII fashion).
 
-Here is why this repository contains an non-intrusive way to declare your agents with some additional skills (policies): the `AgentComposer`.
+This repository contains an non-intrusive way to declare agents equipped with some additional skills (policies).
+
+This concept is called `AgentComposer` and it's based on [CRTP](https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern).
 
 For example:
 
@@ -79,13 +79,15 @@ std::this_thread::sleep_for(2s);
 // stops and waits automatically
 ```
 
-As you notice, `Skills::AutoWait` has been placed before `Skills::AutoStop`. This is because of the order destructions: `Stop` has to be called before `Wait` otherwise you end up waitint undefinitely! Another way to declare that agent follows:
+A note: `Skills::AutoWait` has been placed before `Skills::AutoStop` because of the order of destruction of base classes: since `AutoStop` and `AutoWait` provide their behavior in destruction, we want that `~AutoWait` will be called **after** `~AutoStop` otherwise we end up waiting undefinitely! 
+
+Another way to declare that agent consists in using `Skills::AutoStopAndWait` that for some uses cases is enough:
 
 ```cpp
 using RAIIAgent = AgentComposer<MyAgent, Skills::AutoStart, Skills::AutoStopAndWait>;
 ```
 
-As said, this is not rocker science and **could be improved a lot**. This stuff has been useful to me for some projects and I am just sharing it with the community before I totally forget about it.
+As said, this stuff is not rocket science and **could be improved a lot**. It has been useful to me for some projects and I am just sharing it with the community before I totally forget about it.
 
 Clearly, `AgentComposer` is not coupled with `Agent` at all. You could change its name and reuse this concept for other things if you need.
 
@@ -102,11 +104,14 @@ struct MySkill
 };
 
 using AnotherRAIIAgent = AgentComposer<MyAgent, Skills::AutoStart, Skills::AutoStopAndWait, MySkill>;
+
+AnotherRAIIAgent agent;
+agent.Foo();
 ```
 
 ### Receive or stop
 
-In several scenarios I faced a common pattern: given an async data source (e.g. `unbounded_buffer`), stay blocked consuming all the messages or stop as soon as it's requested.
+In several scenarios I have found a common pattern: given an async data source (e.g. `unbounded_buffer`), stay blocked consuming all the messages or stop as soon as it's requested.
 
 The PPL provides a nice construct for that: `choice`. Basically, you can receive from multiple channels at the same time:
 
@@ -133,9 +138,9 @@ else if (messageIdx == 0)
 }
 ```
 
-The reason of the second check is because in some cases I have found that `messageSource.has_value() == false` even if `messageIdx == 1`. This can happen when you have multiple consumers on the same buffer.
+The second check is needed because it can happen that `messageSource.has_value() == false` even if `messageIdx == 1`. For example when you have multiple consumers on the same buffer.
 
-Another important point is the order of arguments here `Concurrency::make_choice(&stop, &data);`. If you put `stop` after `data` then you could never terminate if `data` keeps on getting in data! This is like a "short-circuit" in `||`: "if the first one does not have data then I check the second one, and so on...".
+Another important point is the order of arguments here `Concurrency::make_choice(&stop, &data);`: `stop` is before `data` because the behavior is very close the a "short-circuit" in boolean operators. *Only* if the first buffer does not have data then check the second, or the third, and so on...
 
 This repo contains a wrapper on top of `Concurrency::receive` to support cancellation while receiving. The cancellation is managed by the same `CancellationToken` provided by `Agent::Run`:
 
@@ -182,12 +187,14 @@ This was quite common for me in the past and I wrote a simple class encapsulatin
 
 ### Consume all the buffer or stop: AsyncConsumerAgent
 
-`AsyncConsumerAgent` is a utility class that must be parametrized with a Consumer behavior and with a policy for the last messages that can be stay in queue after the stop command has been received.
+Since the pattern sketched above is quite common, this repository contains a proper class that models it and wipes away some boilerplate.
 
-The `Consumer` is expected to provide:
+`AsyncConsumerAgent` must be parametrized with a *Consumer behavior* and with a *policy for processing the last messages* that can stay in the buffer after receiving the stop command.
 
-- `void Consume(T)`
-- a member `m_buffer` compatible with the type `Concurrency::ISource<T>` and accessible from subclasses (e.g. `protected`)
+The `Consumer` is expected to provide two elements accessible from subclasses (e.g. `protected`):
+
+- a function with a signature compatible with `void Consume(T)` (e.g. meaning that `const T&` is valid as well)
+- a member variable `m_buffer` compatible with the type `Concurrency::ISource<T>` (e.g. meaning that `Concurrency::ISource<T>&` is valid as well)
 
 Also, `Consumer` mustn't be `final`.
 
@@ -202,17 +209,18 @@ struct MyConsumer
 		
 	}
 
+protected:
 	void Consume(int i)
 	{
 		std::cout << "MyConsumer is handling: " << i << "\n";
 	}
-protected:
+	
 	Concurrency::unbounded_buffer<int>& m_buffer;
 };
 
 //...
 
-using AutoAllAsyncConsumer = AsyncConsumer<MyConsumer, AutoStart, AutoStop, AutoWait, RetainLastValues>;
+using AutoAllAsyncConsumer = AsyncConsumer<MyConsumer, AutoStart, AutoStop, ManualWait, RetainLastValues>;
 		
 Concurrency::unbounded_buffer<int> b;
 AutoAllAsyncConsumer consumer{ b };
@@ -221,16 +229,18 @@ for(auto i=0; i<10; ++i)
 {
   send(b, i);
 }
+
+consumer.Wait();
 ```
 
 `AsyncConsumer` is just a wrapper on top of `AgentComposer` and requires start, stop and wait skills. Additionally it requires a policy for processing the last values that might stay in the buffer *after* the cancellation has been requested.
 
-`AsyncConsumer` also supports cancellation from inside the consumer:
+`AsyncConsumer` also is capable of being **cancelled** from inside the consumer if `Consume`:
 
-- if `Consume` throws a `StopFromInsideConsumerException` exception, `m_buffer` is linked to a sort of "null buffer".
-- if `Consume` throws any other `std::exception` exception.
+- throws a `StopFromInsideConsumerException` exception (in this case `m_buffer` is linked to a sort of "null buffer");
+- throws any other `std::exception` exception.
 
-In both cases, the `Agent` underneath is moved to the `AgentStatus::Completed` state.
+In both cases, the `Agent` underneath is moved to the `AgentStatus::Completed` state and `agent::done()` is called.
 
 Just to spend a few words more about the first behavior, consider this example:
 
@@ -281,7 +291,7 @@ int main()
 }
 ```
 
-In this case, `vals` keeps on receiving values but nobody dequeue them! It could be a problem. Probably the best approach is to link buffers in advance and then unlink them when the agent is terminated, but sometimes you could not do this. So, `AsyncConsumer` uses a trick that consists in linking `m_buffer` with an internal `overwrite_buffer`:
+In this case, `vals` keeps on receiving values but nobody dequeue them! It could be a problem. Probably the best approach is to link buffers in advance and then unlink them when the agent is terminated, but sometimes you are not able to do this. So, `AsyncConsumer` uses a trick that consists in linking `m_buffer` with an internal `overwrite_buffer`:
 
 ```cpp
 catch (const StopFromInsideConsumerException&)
@@ -293,7 +303,7 @@ catch (const StopFromInsideConsumerException&)
 }
 ```
 
-Basically, the normal behavior of `overwrite_buffer` is just to get messages and keep only the most recent one. This is like consuming all incoming messages if nobody receive them. When we `link` `m_buffer` to an `overwrite_buffer` we are basically moving all the messages to the latter.
+Basically, the normal behavior of `overwrite_buffer` is just to consume messages and keep only the most recent one. This is like consuming all incoming messages if nobody receive them. When we link `m_buffer` to such an `overwrite_buffer`, we are basically transferring all the messages to the latter that will be just dropped.
 
 I won't recommend this approach but this is supported.
 
